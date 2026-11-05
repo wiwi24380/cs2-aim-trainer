@@ -24,7 +24,8 @@ puis ouvrez <http://localhost:8000>. (`npx serve` fonctionne aussi.)
 
 - **Réglages** : mode, durée (minutes + secondes), vitesse 1-10, temps d'affichage des cibles (1,5 s par défaut), arme, DPI (800) et sensibilité CS2 (1,00). La distance pour un tour complet est calculée en direct : `360 / (0,022 × sens) / DPI × 2,54` → **≈ 52 cm** à 800 DPI et 1,00.
 - **Commencer** verrouille la souris (compte à rebours de 3 s). **Échap** met en pause : *Reprendre* ou *Quitter* (quitter n'enregistre pas la séance). Si le navigateur refuse de reverrouiller la souris juste après Échap, attendez une seconde et recliquez.
-- **Déplacement** : touches Z Q S D (touches physiques, donc WASD sur un clavier QWERTY). Le mur central a deux angles ; les cibles apparaissent cachées derrière, à gauche ou à droite.
+- **Déplacement** : touches Z Q S D (touches physiques, donc WASD sur un clavier QWERTY). Le mur central a deux angles ; les cibles (fixes) apparaissent cachées derrière, à gauche ou à droite.
+- **Déplacement + cibles mobiles** : même décor, mais les cibles se déplacent latéralement ; le curseur de vitesse règle leur vitesse.
 - **Rafale** : maintenez le clic (~600 tirs/min). La visée monte selon un schéma fixe (haut, puis écarts latéraux) ; tirez la souris vers le bas pour compenser. Le recul se réinitialise peu après le relâchement.
 
 ### Règles

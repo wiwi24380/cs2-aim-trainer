@@ -32,7 +32,14 @@ const DEFAULTS = {
   displayTime: 1.5, weapon: 'semi', dpi: 800, sens: 1
 };
 
-const MODE_LABEL = { fixed: 'Cibles fixes', moving: 'Cibles mobiles', movement: 'Déplacement' };
+const MODE_LABEL = {
+  fixed: 'Cibles fixes',
+  moving: 'Cibles mobiles',
+  movement: 'Déplacement',
+  movement_moving: 'Déplacement + cibles mobiles'
+};
+const hasWalking = (mode) => mode === 'movement' || mode === 'movement_moving';   // le joueur se déplace (Z Q S D)
+const hasMovingTargets = (mode) => mode === 'moving' || mode === 'movement_moving'; // les cibles se déplacent latéralement
 const WEAPON_LABEL = { semi: 'Coup par coup', auto: 'Rafale' };
 
 /* Schéma de recul fixe (inspiré d'une rafale de fusil CS2).
@@ -154,9 +161,10 @@ function refreshMenuInfo() {
   ui.modeHint.textContent = {
     fixed: 'Une cible à la fois, à une position aléatoire. La vitesse règle le rythme d\'apparition.',
     moving: 'Les silhouettes se déplacent latéralement. La vitesse règle leur vitesse de déplacement.',
-    movement: 'Vous êtes devant un angle de mur : sortez de l\'angle avec Z Q S D (WASD en QWERTY) puis visez les cibles qui apparaissent. La vitesse règle le rythme d\'apparition.'
+    movement: 'Vous êtes devant un angle de mur : sortez de l\'angle avec Z Q S D (WASD en QWERTY) puis visez les cibles fixes qui apparaissent. La vitesse règle le rythme d\'apparition.',
+    movement_moving: 'Comme « Déplacement », mais les cibles qui apparaissent derrière l\'angle se déplacent latéralement. La vitesse règle leur vitesse de déplacement.'
   }[s.mode];
-  ui.speedHint.textContent = s.mode === 'moving'
+  ui.speedHint.textContent = hasMovingTargets(s.mode)
     ? `Déplacement latéral d'environ ${nf(moveSpeed(s.speed), 1)} m/s.`
     : `Nouvelle cible environ ${nf(spawnGap(s.speed), 1)} s après la précédente.`;
   ui.weaponHint.textContent = s.weapon === 'auto'
@@ -253,7 +261,7 @@ function buildArena(mode) {
   addBox(0.5, 8, 46.5, -16.25, 4, -17, wallMat);      // gauche
   addBox(0.5, 8, 46.5, 16.25, 4, -17, wallMat);       // droite
 
-  if (mode === 'movement') {
+  if (hasWalking(mode)) {
     // Mur central : deux angles, à gauche (x = -3) et à droite (x = +3)
     const mat = new THREE.MeshLambertMaterial({ map: gridTexture('#4a5468', '#7b88a6', 3, 2) });
     addBox(6, 4, 0.4, 0, 2, -2.2, mat);
@@ -455,7 +463,7 @@ async function startSession() {
   G.prevState = null;
 
   showScreen('game');
-  $('keysHint').classList.toggle('hidden', s.mode !== 'movement');
+  $('keysHint').classList.toggle('hidden', !hasWalking(s.mode));
   $('countdown').textContent = '';
   updateHud(true);
   updateCamera();
@@ -812,6 +820,11 @@ function spawnTarget() {
     G.lastSide = side;
     t.x = side * rand(5, 11);
     t.z = -rand(9, 18);
+    if (s.mode === 'movement_moving') {          // ... et qui se déplace latéralement
+      t.bound = 12;
+      t.vx = (Math.random() < 0.5 ? -1 : 1) * moveSpeed(s.speed);
+      t.dirTimer = rand(0.6, 1.6);
+    }
   }
   t.group.position.set(t.x, 0, t.z);
   setTargetOpacity(t, 0);
@@ -828,7 +841,7 @@ function updateTargets(dt) {
     G.spawnTimer -= dt;
     if (G.spawnTimer <= 0) {
       spawnTarget();
-      G.spawnTimer = spawnGap(s.speed);
+      G.spawnTimer = s.mode === 'movement_moving' ? 0.5 : spawnGap(s.speed);
     }
   }
 
@@ -837,7 +850,7 @@ function updateTargets(dt) {
     if (!t.alive) continue;      // retirée par son effet de disparition
     const age = G.t - t.born;
 
-    if (s.mode === 'moving') {
+    if (hasMovingTargets(s.mode)) {
       t.x += t.vx * dt;
       if (t.x > t.bound) { t.x = t.bound; t.vx = -Math.abs(t.vx); }
       if (t.x < -t.bound) { t.x = -t.bound; t.vx = Math.abs(t.vx); }
@@ -948,7 +961,7 @@ function frame(ts) {
 
 function update(dt) {
   G.t += dt;
-  if (G.settings.mode === 'movement') updatePlayer(dt);
+  if (hasWalking(G.settings.mode)) updatePlayer(dt);
   updateRecoil(dt);
 
   // cadence automatique en rafale
@@ -1000,7 +1013,7 @@ document.addEventListener('keydown', (e) => {
   const dir = KEYMAP[e.code];
   if (dir && (G.state === 'playing' || G.state === 'countdown')) {
     e.preventDefault();
-    if (G.settings.mode === 'movement') G.keys[dir] = true;
+    if (hasWalking(G.settings.mode)) G.keys[dir] = true;
   }
 });
 document.addEventListener('keyup', (e) => {
