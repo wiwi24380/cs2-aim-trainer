@@ -376,6 +376,24 @@ function buildArena(mode) {
     addBox(0.08, 4, 0.44, 3.04, 2, -2.2, edge, { col: false });
   }
 
+  if (mode === 'movement_moving') {
+    // 6 murs de hauteurs différentes entre l'angle et la zone des cibles (couvertures, plus d'immersion).
+    // Les cibles apparaissent à z <= -9 : elles restent derrière ces murs, sans les traverser.
+    const palette = [
+      new THREE.MeshLambertMaterial({ map: gridTexture('#3f4757', '#6b7894', 2, 2) }),
+      new THREE.MeshLambertMaterial({ map: gridTexture('#4d4a44', '#80796c', 2, 2) })
+    ];
+    const walls = [   // [x, z, largeur, hauteur]
+      [-5.5, -6.2, 2.4, 2.6],
+      [-9.0, -7.2, 2.8, 1.3],
+      [-13.0, -6.0, 2.2, 3.6],
+      [5.5, -6.2, 2.4, 1.8],
+      [9.0, -7.0, 2.6, 3.0],
+      [13.0, -7.4, 2.2, 2.2]
+    ];
+    walls.forEach(([x, z, w, h], i) => addBox(w, h, 0.5, x, h / 2, z, palette[i % 2]));
+  }
+
   arenas[mode] = { group, occluders, colliders };
   return arenas[mode];
 }
