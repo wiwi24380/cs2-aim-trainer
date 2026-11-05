@@ -38,6 +38,20 @@ const MODE_LABEL = {
   movement: 'Déplacement',
   movement_moving: 'Déplacement + cibles mobiles'
 };
+/* Murs répartis dans l'arène du mode « Déplacement + cibles mobiles » : [x, z, largeur, profondeur, hauteur].
+ * Dix hauteurs différentes (1,1 à 3,8 m) ; le centre (départ du joueur et angle) reste dégagé. */
+const SCATTER_WALLS = [
+  [-12.0,   3.0, 2.0, 0.5, 2.0],
+  [ 11.0,   3.5, 2.4, 0.5, 1.4],
+  [ -8.5,  -5.0, 0.5, 2.6, 2.6],
+  [  8.0,  -4.5, 2.6, 0.5, 3.2],
+  [-13.0, -10.5, 2.2, 0.5, 3.8],
+  [ -5.0, -13.0, 2.4, 0.5, 1.7],
+  [  4.5, -12.0, 2.0, 0.5, 2.9],
+  [ 13.0, -15.5, 0.5, 3.0, 2.3],
+  [ -9.0, -22.0, 3.0, 0.5, 3.5],
+  [  7.0, -26.0, 2.8, 0.5, 1.1]
+];
 const hasWalking = (mode) => mode === 'movement' || mode === 'movement_moving';   // le joueur se déplace (Z Q S D)
 const hasMovingTargets = (mode) => mode === 'moving' || mode === 'movement_moving'; // les cibles se déplacent latéralement
 const WEAPON_LABEL = { semi: 'Pistolet · coup par coup', auto: 'Mitraillette · rafale' };
@@ -377,21 +391,12 @@ function buildArena(mode) {
   }
 
   if (mode === 'movement_moving') {
-    // 6 murs de hauteurs différentes entre l'angle et la zone des cibles (couvertures, plus d'immersion).
-    // Les cibles apparaissent à z <= -9 : elles restent derrière ces murs, sans les traverser.
+    // 10 murs de hauteurs toutes différentes, répartis sur l'ensemble de l'arène (couvertures).
     const palette = [
       new THREE.MeshLambertMaterial({ map: gridTexture('#3f4757', '#6b7894', 2, 2) }),
       new THREE.MeshLambertMaterial({ map: gridTexture('#4d4a44', '#80796c', 2, 2) })
     ];
-    const walls = [   // [x, z, largeur, hauteur]
-      [-5.5, -6.2, 2.4, 2.6],
-      [-9.0, -7.2, 2.8, 1.3],
-      [-13.0, -6.0, 2.2, 3.6],
-      [5.5, -6.2, 2.4, 1.8],
-      [9.0, -7.0, 2.6, 3.0],
-      [13.0, -7.4, 2.2, 2.2]
-    ];
-    walls.forEach(([x, z, w, h], i) => addBox(w, h, 0.5, x, h / 2, z, palette[i % 2]));
+    SCATTER_WALLS.forEach(([x, z, w, d, h], i) => addBox(w, h, d, x, h / 2, z, palette[i % 2]));
   }
 
   arenas[mode] = { group, occluders, colliders };
@@ -966,6 +971,12 @@ function pulse(id) {
 /* ---------------------------------------------------------------------
  *  Apparition et mouvement des cibles
  * ------------------------------------------------------------------- */
+/* Une silhouette (rayon 0,35 m) ne doit jamais se trouver dans un mur. */
+function targetBlocked(x, z) {
+  const r = 0.35;
+  return G.arena.colliders.some((c) => x > c.minX - r && x < c.maxX + r && z > c.minZ - r && z < c.maxZ + r);
+}
+
 function spawnTarget() {
   const s = G.settings;
   const t = makeTarget();
@@ -991,8 +1002,11 @@ function spawnTarget() {
     // Déplacement : cible cachée derrière le mur, à gauche ou à droite de l'angle
     const side = Math.random() < 0.65 ? -G.lastSide : G.lastSide;
     G.lastSide = side;
-    t.x = side * rand(5, 11);
-    t.z = -rand(9, 18);
+    for (let i = 0; i < 30; i++) {                       // position libre (hors des murs)
+      t.x = side * rand(5, 11);
+      t.z = -rand(9, 18);
+      if (!targetBlocked(t.x, t.z)) break;
+    }
     if (s.mode === 'movement_moving') {          // ... et qui se déplace latéralement
       t.bound = 12;
       t.vx = (Math.random() < 0.5 ? -1 : 1) * moveSpeed(s.speed);
@@ -1024,7 +1038,11 @@ function updateTargets(dt) {
     const age = G.t - t.born;
 
     if (hasMovingTargets(s.mode)) {
+      const prevX = t.x;
       t.x += t.vx * dt;
+      if (targetBlocked(t.x, t.z)) {                     // un mur : la cible fait demi-tour
+        t.x = prevX; t.vx = -t.vx; t.dirTimer = rand(0.6, 1.6);
+      }
       if (t.x > t.bound) { t.x = t.bound; t.vx = -Math.abs(t.vx); }
       if (t.x < -t.bound) { t.x = -t.bound; t.vx = Math.abs(t.vx); }
       t.dirTimer -= dt;
