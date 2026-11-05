@@ -432,6 +432,7 @@ async function startSession() {
   if (webglError) { ui.startError.textContent = webglError; ui.startError.hidden = false; return; }
   const s = commitSettings();
   ui.startError.hidden = true;
+  initAudio();
 
   clearWorld();
   if (G.arena) scene.remove(G.arena.group);
@@ -485,6 +486,7 @@ function pauseGame() {
 
 async function resumeGame() {
   if (G.state !== 'paused') return;
+  initAudio();
   const ok = await lockPointer();
   if (ok && document.pointerLockElement === canvas) {
     $('pause').classList.remove('active');
@@ -572,11 +574,60 @@ const raycaster = new THREE.Raycaster();
 raycaster.far = 120;
 const CENTER = new THREE.Vector2(0, 0);
 
+/* ----- Son du tir (synthétisé avec Web Audio : aucun fichier audio) ----- */
+let audioCtx = null;
+let noiseBuf = null;
+
+function initAudio() {          // à appeler lors d'un clic (le navigateur l'exige)
+  try {
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      audioCtx = new AC();
+      noiseBuf = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * 0.25), audioCtx.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) { audioCtx = null; }
+}
+
+function playShot() {
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  const t = audioCtx.currentTime;
+  const master = audioCtx.createGain();
+  master.gain.value = 0.35;
+  master.connect(audioCtx.destination);
+
+  // claquement : bruit filtré, très court
+  const n = audioCtx.createBufferSource();
+  n.buffer = noiseBuf;
+  const hp = audioCtx.createBiquadFilter();
+  hp.type = 'bandpass'; hp.frequency.value = 1800; hp.Q.value = 0.6;
+  const ng = audioCtx.createGain();
+  ng.gain.setValueAtTime(1, t);
+  ng.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  n.connect(hp); hp.connect(ng); ng.connect(master);
+  n.start(t); n.stop(t + 0.14);
+
+  // détonation grave
+  const o = audioCtx.createOscillator();
+  o.type = 'triangle';
+  o.frequency.setValueAtTime(170, t);
+  o.frequency.exponentialRampToValueAtTime(45, t + 0.1);
+  const og = audioCtx.createGain();
+  og.gain.setValueAtTime(0.9, t);
+  og.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+  o.connect(og); og.connect(master);
+  o.start(t); o.stop(t + 0.16);
+}
+
 function fire() {
   if (G.state !== 'playing') return;
   const st = G.stats;
   st.shots++;
   G.sinceShot = 0;
+  playShot();
 
   // La balle part exactement dans l'axe de la caméra (visée + recul courant)
   updateCamera();

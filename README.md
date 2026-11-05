@@ -36,6 +36,7 @@ puis ouvrez <http://localhost:8000>. (`npx serve` fonctionne aussi.)
 
 - Visée : 0,022° × sensibilité par unité de mouvement, identique sur les deux axes, sans accélération ni lissage. Le mode `unadjustedMovement` est tenté en premier, avec repli sur le mode normal (indiqué dans le menu pause).
 - FOV vertical : 74°.
+- Son : seul le tir est sonorisé (bruit synthétisé avec Web Audio, aucun fichier audio).
 - **% headshots** = tirs à la tête ÷ cibles éliminées. **Précision** = tirs touchés ÷ tirs effectués. **Temps moyen** = durée entre l'apparition et l'élimination.
 - Réglages et historique (500 séances max.) sont stockés dans `localStorage` (clés `cs2aim.settings.v1` et `cs2aim.history.v1`).
 
