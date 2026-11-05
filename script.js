@@ -40,7 +40,7 @@ const MODE_LABEL = {
 };
 const hasWalking = (mode) => mode === 'movement' || mode === 'movement_moving';   // le joueur se déplace (Z Q S D)
 const hasMovingTargets = (mode) => mode === 'moving' || mode === 'movement_moving'; // les cibles se déplacent latéralement
-const WEAPON_LABEL = { semi: 'Coup par coup', auto: 'Rafale' };
+const WEAPON_LABEL = { semi: 'Pistolet · coup par coup', auto: 'Mitraillette · rafale' };
 
 /* Schéma de recul fixe (inspiré d'une rafale de fusil CS2).
  * Chaque entrée = [déplacement vers la droite (°), déplacement vers le haut (°)]
@@ -168,8 +168,8 @@ function refreshMenuInfo() {
     ? `Déplacement latéral d'environ ${nf(moveSpeed(s.speed), 1)} m/s.`
     : `Nouvelle cible environ ${nf(spawnGap(s.speed), 1)} s après la précédente.`;
   ui.weaponHint.textContent = s.weapon === 'auto'
-    ? 'Tir continu (~600 tirs/min) tant que le bouton est enfoncé. La visée monte : tirez la souris vers le bas pour compenser.'
-    : 'Un tir à chaque clic, avec un léger recul.';
+    ? 'Mitraillette : tir continu (~600 tirs/min) tant que le bouton est enfoncé. La visée monte : tirez la souris vers le bas pour compenser.'
+    : 'Pistolet : un tir à chaque clic, avec un léger recul.';
 }
 
 function commitSettings() {
@@ -204,13 +204,118 @@ scene.add(new THREE.HemisphereLight(0xc4d2ff, 0x2c3038, 1.0));
 const sun = new THREE.DirectionalLight(0xffffff, 0.8);
 sun.position.set(6, 12, 8);
 scene.add(sun);
+if (renderer) renderer.autoClear = false;   // la scène, puis les armes par-dessus (2 passes)
+
+/* ---------------------------------------------------------------------
+ *  Armes en vue à la première personne (pistolet / mitraillette)
+ * ------------------------------------------------------------------- */
+const weaponScene = new THREE.Scene();
+weaponScene.add(new THREE.HemisphereLight(0xdfe8ff, 0x3a3f4a, 0.9));
+const weaponLight = new THREE.DirectionalLight(0xffffff, 0.55);
+weaponLight.position.set(-1, 2, 1);
+weaponScene.add(weaponLight);
+const weaponCam = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 5);
+
+const VM = { pistol: null, smg: null, active: null, kick: 0, flashT: 0 };
+const vmBoxGeo = new THREE.BoxGeometry(1, 1, 1);
+const SKIN = 0xd2a27c, SLEEVE = 0x39463a;
+
+function buildViewmodel(kind) {
+  const g = new THREE.Group();
+  const box = (w, h, d, x, y, z, color, rx = 0, ry = 0) => {
+    const m = new THREE.Mesh(vmBoxGeo, new THREE.MeshLambertMaterial({ color }));
+    m.scale.set(w, h, d); m.position.set(x, y, z); m.rotation.set(rx, ry, 0);
+    g.add(m);
+    return m;
+  };
+  let muzzleZ, base;
+  if (kind === 'pistol') {
+    box(0.040, 0.045, 0.22, 0, 0.020, -0.06, 0x2d3239);          // culasse
+    box(0.038, 0.030, 0.18, 0, -0.012, -0.04, 0x1c1f24);         // carcasse
+    box(0.022, 0.022, 0.03, 0, 0.020, -0.185, 0x0d0e10);         // bouche du canon
+    box(0.040, 0.105, 0.055, 0, -0.075, 0.035, 0x15171a, 0.25);  // crosse
+    box(0.070, 0.075, 0.080, 0.012, -0.070, 0.050, SKIN);        // main
+    box(0.075, 0.085, 0.420, 0.040, -0.115, 0.290, SLEEVE, 0.12, -0.08);  // avant-bras
+    box(0.020, 0.008, 0.200, 0, 0.0445, -0.06, 0x555d69);          // dessus de culasse
+    box(0.010, 0.014, 0.012, 0, 0.050, -0.165, 0xe8e8e8);          // guidon
+    box(0.036, 0.006, 0.075, 0, -0.035, -0.015, 0x0d0e10);         // pontet
+    muzzleZ = -0.20; base = new THREE.Vector3(0.095, -0.105, -0.40);
+  } else {
+    box(0.052, 0.070, 0.340, 0, 0.010, -0.080, 0x2a2d33);        // corps
+    box(0.030, 0.016, 0.220, 0, 0.056, -0.060, 0x3a3f48);        // rail
+    box(0.026, 0.026, 0.150, 0, 0.026, -0.325, 0x14161a);        // canon
+    box(0.034, 0.150, 0.052, 0, -0.095, -0.020, 0x1b1d21, -0.10);// chargeur
+    box(0.040, 0.105, 0.050, 0, -0.080, 0.105, 0x15171a, 0.25);  // poignée
+    box(0.042, 0.050, 0.060, 0, 0.000, 0.120, 0x23262b);         // crosse (repliée)
+    box(0.072, 0.078, 0.085, 0.012, -0.075, 0.115, SKIN);        // main
+    box(0.078, 0.088, 0.420, 0.042, -0.120, 0.330, SLEEVE, 0.12, -0.08);  // avant-bras
+    box(0.012, 0.014, 0.014, 0, 0.060, -0.395, 0xe8e8e8);          // guidon
+    box(0.026, 0.020, 0.060, 0, 0.056, 0.060, 0x15171a);           // viseur arrière
+    muzzleZ = -0.405; base = new THREE.Vector3(0.085, -0.12, -0.44);
+  }
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0, 0.024, muzzleZ);
+  g.add(muzzle);
+  const flash = new THREE.Mesh(
+    new THREE.SphereGeometry(0.03, 10, 8),
+    new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  flash.position.copy(muzzle.position);
+  flash.visible = false;
+  g.add(flash);
+  g.position.copy(base);
+  return { group: g, muzzle, flash, base };
+}
+
+function setViewmodel(weapon) {
+  if (!VM.pistol) { VM.pistol = buildViewmodel('pistol'); VM.smg = buildViewmodel('smg'); }
+  [VM.pistol, VM.smg].forEach((v) => { if (v.group.parent) weaponScene.remove(v.group); });
+  VM.active = weapon === 'auto' ? VM.smg : VM.pistol;
+  weaponScene.add(VM.active.group);
+  VM.kick = 0; VM.flashT = 0; VM.active.flash.visible = false;
+}
+
+function updateViewmodel(dt) {
+  const v = VM.active;
+  if (!v) return;
+  VM.kick *= Math.exp(-16 * dt);
+  v.group.position.set(v.base.x, v.base.y + VM.kick * 0.012, v.base.z + VM.kick * 0.045);
+  v.group.rotation.set(VM.kick * 0.09, 0.025, 0);
+  if (VM.flashT > 0) { VM.flashT -= dt; if (VM.flashT <= 0) v.flash.visible = false; }
+}
+
+function viewmodelFired(auto) {
+  const v = VM.active;
+  if (!v) return;
+  VM.kick = Math.min(1.3, VM.kick + (auto ? 0.55 : 1));
+  VM.flashT = 0.045;
+  v.flash.visible = true;
+  v.flash.scale.setScalar(0.8 + Math.random() * 0.7);
+}
+
+const _mz = new THREE.Vector3();
+function muzzleWorldPosition() {
+  weaponScene.updateMatrixWorld(true);
+  VM.active.muzzle.getWorldPosition(_mz);     // repère de la caméra d'arme (identique à celui de la vue)
+  return camera.localToWorld(_mz.clone());
+}
+
+function renderAll() {
+  renderer.setClearColor(0x10141b, 1);
+  renderer.clear();
+  renderer.render(scene, camera);
+  renderer.clearDepth();
+  renderer.render(weaponScene, weaponCam);
+}
 
 function onResize() {
   const w = window.innerWidth, h = window.innerHeight;
   if (renderer) renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  if (renderer && (G.state === 'playing' || G.state === 'countdown' || G.state === 'paused')) renderer.render(scene, camera);
+  weaponCam.aspect = w / h;
+  weaponCam.updateProjectionMatrix();
+  if (renderer && (G.state === 'playing' || G.state === 'countdown' || G.state === 'paused')) renderAll();
   if (ui.history.classList.contains('active')) renderHistory();
 }
 
@@ -253,6 +358,7 @@ function buildArena(mode) {
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(0, 0, -17);
   group.add(floor);
+  occluders.push(floor);
 
   // murs de l'arène
   const wallMat = new THREE.MeshLambertMaterial({ map: gridTexture('#2a3140', '#434e66', 17, 3) });
@@ -441,6 +547,7 @@ async function startSession() {
   const s = commitSettings();
   ui.startError.hidden = true;
   initAudio();
+  setViewmodel(s.weapon);
 
   clearWorld();
   if (G.arena) scene.remove(G.arena.group);
@@ -467,7 +574,7 @@ async function startSession() {
   $('countdown').textContent = '';
   updateHud(true);
   updateCamera();
-  if (renderer) renderer.render(scene, camera);
+  if (renderer) renderAll();
 
   const ok = await lockPointer();
   if (!ok || document.pointerLockElement !== canvas) {
@@ -644,7 +751,12 @@ function fire() {
   const objs = G.arena.occluders.slice();
   G.targets.forEach((t) => { if (t.alive) objs.push(...t.meshes); });
   const hit = raycaster.intersectObjects(objs, false)[0];
-  if (hit && hit.object.userData.target) onHit(hit.object.userData.zone, hit.object.userData.target);
+  const tgt = hit && hit.object.userData.target;
+  const end = hit ? hit.point.clone() : raycaster.ray.origin.clone().addScaledVector(raycaster.ray.direction, 60);
+  const impact = hit ? (tgt ? hit.object.userData.zone : 'wall') : null;
+  viewmodelFired(G.settings.weapon === 'auto');
+  spawnTracer(muzzleWorldPosition(), end, impact);
+  if (tgt) onHit(hit.object.userData.zone, hit.object.userData.target);
 
   applyRecoil();
 }
@@ -739,6 +851,37 @@ function burst(t) {
   });
 }
 
+/* ----- Balles lumineuses : points qui filent vers l'impact, puis point d'impact ----- */
+const DOT_GEO = new THREE.SphereGeometry(1, 8, 6);
+const dotMat = (color) => new THREE.MeshBasicMaterial({
+  color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false
+});
+const DOT_MAT = { tracer: dotMat(0xffe9a0), head: dotMat(0xff3b3b), body: dotMat(0xffffff), wall: dotMat(0xffd45e) };
+const TRAIL = 4;
+
+function spawnTracer(from, to, impact) {
+  const dist = from.distanceTo(to);
+  const dots = [];
+  for (let k = 0; k < TRAIL; k++) {
+    const m = new THREE.Mesh(DOT_GEO, DOT_MAT.tracer);
+    m.position.copy(from);
+    scene.add(m);
+    dots.push(m);
+  }
+  G.fx.push({
+    kind: 'tracer', t: 0, dur: clamp(dist / 170, 0.05, 0.4), from, to, dist, dots, impact,
+    cleanup() { dots.forEach((d) => scene.remove(d)); }
+  });
+}
+
+function spawnImpact(at, kind) {
+  const m = new THREE.Mesh(DOT_GEO, DOT_MAT[kind] || DOT_MAT.wall);
+  m.position.copy(at);
+  scene.add(m);
+  G.fx.push({ kind: 'impact', t: 0, dur: kind === 'head' ? 0.4 : 0.28, at, m, big: kind === 'head' ? 1.7 : 1,
+    cleanup() { scene.remove(m); } });
+}
+
 function updateFx(dt) {
   for (let i = G.fx.length - 1; i >= 0; i--) {
     const f = G.fx[i];
@@ -752,6 +895,18 @@ function updateFx(dt) {
       setTargetOpacity(f.target, 1 - p);
     } else if (f.kind === 'fade') {
       setTargetOpacity(f.target, 1 - p);
+    } else if (f.kind === 'tracer') {
+      const dir = f.to.clone().sub(f.from).divideScalar(Math.max(f.dist, 1e-6));
+      f.dots.forEach((d, k) => {
+        const travelled = Math.max(0, Math.min(f.dist, p * f.dist - k * 0.7));
+        d.position.copy(f.from).addScaledVector(dir, travelled);
+        const dc = d.position.distanceTo(camera.position);
+        d.scale.setScalar(Math.max(0.012, dc * 0.0042 * (1 - k * 0.2)));   // taille quasi constante à l'écran
+      });
+      if (p >= 1 && f.impact) spawnImpact(f.to, f.impact);
+    } else if (f.kind === 'impact') {
+      const dc = f.at.distanceTo(camera.position);
+      f.m.scale.setScalar(Math.max(0.03, dc * 0.009 * f.big) * (1 - p * 0.8));
     } else if (f.kind === 'burst') {
       f.parts.forEach((q) => {
         q.v.y -= 9 * dt;
@@ -949,13 +1104,14 @@ function frame(ts) {
     $('countdown').textContent = n > 0 ? String(n) : '';
     if (G.countdown <= 0) { G.state = 'playing'; $('countdown').textContent = ''; }
     updateRecoil(dt);
+    updateViewmodel(dt);
   } else if (G.state === 'playing') {
     update(dt);
   }
 
   if (renderer && (G.state === 'countdown' || G.state === 'playing')) {
     updateCamera();
-    renderer.render(scene, camera);
+    renderAll();
   }
 }
 
@@ -976,6 +1132,7 @@ function update(dt) {
     G.cooldown = 0;
   }
 
+  updateViewmodel(dt);
   updateCamera();
   updateTargets(dt);
   updateFx(dt);
