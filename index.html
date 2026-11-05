@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Entraîneur de visée CS2</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%23f5a623' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%23f5a623'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Scène 3D -->
+  <canvas id="scene" aria-label="Scène 3D"></canvas>
+
+  <!-- ===== Menu principal ===== -->
+  <main id="menu" class="screen active">
+    <div class="container">
+      <header class="title">
+        <h1>Entraîneur de visée <span class="accent">CS2</span></h1>
+        <p class="muted">Réglez votre séance, puis cliquez sur « Commencer ».</p>
+      </header>
+
+      <section class="panel" aria-labelledby="h-settings">
+        <h2 id="h-settings">Réglages</h2>
+
+        <div class="grid">
+          <div class="field full">
+            <span class="label">Mode</span>
+            <div class="segmented" id="modeGroup" role="radiogroup" aria-label="Mode">
+              <label><input type="radio" name="mode" value="fixed"><span>Cibles fixes</span></label>
+              <label><input type="radio" name="mode" value="moving"><span>Cibles mobiles</span></label>
+              <label><input type="radio" name="mode" value="movement"><span>Déplacement</span></label>
+            </div>
+            <p class="hint" id="modeHint"></p>
+          </div>
+
+          <div class="field">
+            <span class="label">Durée de la séance</span>
+            <div class="inline">
+              <input type="number" id="durMin" min="0" max="120" step="1" inputmode="numeric" aria-label="Minutes">
+              <span class="unit">min</span>
+              <input type="number" id="durSec" min="0" max="59" step="1" inputmode="numeric" aria-label="Secondes">
+              <span class="unit">s</span>
+            </div>
+            <p class="hint" id="durHint"></p>
+          </div>
+
+          <div class="field">
+            <label class="label" for="displayTime">Temps d'affichage des cibles</label>
+            <div class="inline">
+              <input type="number" id="displayTime" min="0.3" max="10" step="0.1" inputmode="decimal">
+              <span class="unit">secondes</span>
+            </div>
+            <p class="hint">Au-delà, la cible disparaît et compte comme ratée.</p>
+          </div>
+
+          <div class="field full">
+            <label class="label" for="speed">Vitesse des cibles : <strong id="speedVal">5</strong> / 10</label>
+            <div class="range-row">
+              <span class="muted">1 (lent)</span>
+              <input type="range" id="speed" min="1" max="10" step="1">
+              <span class="muted">10 (rapide)</span>
+            </div>
+            <p class="hint" id="speedHint"></p>
+          </div>
+
+          <div class="field full">
+            <span class="label">Arme</span>
+            <div class="segmented" id="weaponGroup" role="radiogroup" aria-label="Arme">
+              <label><input type="radio" name="weapon" value="semi"><span>Coup par coup</span></label>
+              <label><input type="radio" name="weapon" value="auto"><span>Rafale</span></label>
+            </div>
+            <p class="hint" id="weaponHint"></p>
+          </div>
+
+          <div class="field">
+            <label class="label" for="dpi">DPI de la souris</label>
+            <input type="number" id="dpi" min="100" max="32000" step="50" inputmode="numeric">
+          </div>
+
+          <div class="field">
+            <label class="label" for="sens">Sensibilité CS2</label>
+            <input type="number" id="sens" min="0.01" max="30" step="0.01" inputmode="decimal">
+          </div>
+        </div>
+
+        <div class="cm360">
+          <span>Distance pour un tour complet (360°)</span>
+          <strong id="cm360">—</strong>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button id="startBtn" class="btn big primary" type="button">Commencer</button>
+        <button id="historyBtn" class="btn" type="button">Historique</button>
+      </div>
+      <p id="startError" class="error" role="alert" hidden></p>
+      <p class="hint center">Visée : 0,022° par unité de mouvement × sensibilité, sans accélération. Échap pour mettre en pause.</p>
+    </div>
+  </main>
+
+  <!-- ===== Historique ===== -->
+  <section id="history" class="screen">
+    <div class="container wide">
+      <header class="title row">
+        <div>
+          <h1>Historique</h1>
+          <p class="muted" id="histCount"></p>
+        </div>
+        <div class="row gap">
+          <label class="inline">
+            <span class="muted">Mode</span>
+            <select id="histFilter">
+              <option value="all">Tous les modes</option>
+              <option value="fixed">Cibles fixes</option>
+              <option value="moving">Cibles mobiles</option>
+              <option value="movement">Déplacement</option>
+            </select>
+          </label>
+          <button id="histBack" class="btn" type="button">← Menu</button>
+        </div>
+      </header>
+
+      <section class="panel charts">
+        <h2>Progression</h2>
+        <div class="chart-wrap">
+          <h3>Score</h3>
+          <canvas id="chartScore" height="190"></canvas>
+        </div>
+        <div class="chart-wrap">
+          <h3>Temps moyen pour éliminer une cible (s)</h3>
+          <canvas id="chartTime" height="190"></canvas>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="row">
+          <h2>Séances</h2>
+          <div id="clearArea">
+            <button id="clearBtn" class="btn danger" type="button">Tout supprimer</button>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table id="histTable">
+            <thead>
+              <tr>
+                <th>Date</th><th>Mode</th><th>Durée</th><th>Vitesse</th><th>Arme</th>
+                <th class="num">Score</th><th class="num">Tirs</th><th class="num">Précision</th>
+                <th class="num">Têtes</th><th class="num">Corps</th><th class="num">% HS</th>
+                <th class="num">Éliminées</th><th class="num">Ratées</th><th class="num">Temps moyen</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="histBody"></tbody>
+          </table>
+        </div>
+        <p id="histEmpty" class="muted center" hidden>Aucune séance enregistrée pour le moment.</p>
+      </section>
+    </div>
+  </section>
+
+  <!-- ===== Interface en jeu ===== -->
+  <div id="hud" class="hidden">
+    <div class="hud-bar">
+      <div class="stat"><span>Temps</span><strong id="hudTime">0:00</strong></div>
+      <div class="stat"><span>Score</span><strong id="hudScore">0</strong></div>
+      <div class="stat"><span>Tête</span><strong id="hudHead">0</strong></div>
+      <div class="stat"><span>Corps</span><strong id="hudBody">0</strong></div>
+      <div class="stat"><span>Ratées</span><strong id="hudMiss">0</strong></div>
+    </div>
+    <div id="crosshair"><i class="h l"></i><i class="h r"></i><i class="v t"></i><i class="v b"></i></div>
+    <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+    <div id="floaters"></div>
+    <div id="countdown"></div>
+    <div id="keysHint">Z Q S D : se déplacer</div>
+  </div>
+
+  <!-- ===== Pause ===== -->
+  <div id="pause" class="overlay">
+    <div class="dialog">
+      <h2>Pause</h2>
+      <p class="muted">La séance est suspendue.</p>
+      <p class="hint" id="rawInfo"></p>
+      <p id="pauseMsg" class="error" hidden></p>
+      <div class="actions">
+        <button id="resumeBtn" class="btn big primary" type="button">Reprendre</button>
+        <button id="quitBtn" class="btn" type="button">Quitter</button>
+      </div>
+      <p class="hint">« Quitter » abandonne la séance sans l'enregistrer.</p>
+    </div>
+  </div>
+
+  <!-- ===== Fin de séance ===== -->
+  <div id="end" class="overlay">
+    <div class="dialog wide-dialog">
+      <h2>Séance terminée</h2>
+      <p class="muted" id="endSub"></p>
+      <div class="score-big"><span>Score</span><strong id="endScore">0</strong></div>
+      <dl class="results" id="endStats"></dl>
+      <div class="actions">
+        <button id="againBtn" class="btn big primary" type="button">Rejouer</button>
+        <button id="endMenuBtn" class="btn" type="button">Menu</button>
+        <button id="endHistBtn" class="btn" type="button">Historique</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="lib/three.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
